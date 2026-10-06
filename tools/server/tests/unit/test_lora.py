@@ -66,6 +66,31 @@ def test_lora_per_request():
         assert match_regex(re_test, res.body["content"])
 
 
+def test_lora_global_scale_change_with_cached_prompt():
+    global server
+    server.start()
+    prompt = "Look in thy glass"
+
+    def set_scale(scale: float):
+        res = server.make_request("POST", "/lora-adapters", data=[{"id": 0, "scale": scale}])
+        assert res.status_code == 200
+
+    def complete():
+        res = server.make_request("POST", "/completion", data={"prompt": prompt, "cache_prompt": True})
+        assert res.status_code == 200
+        return res.body
+
+    set_scale(1.0)
+    res = complete()
+    assert match_regex("(eye|love|glass|sun)+", res["content"])
+
+    # the cached prompt was computed with the lora, so it must not be reused once the lora is disabled
+    set_scale(0.0)
+    res = complete()
+    assert res["timings"]["prompt_n"] == res["tokens_evaluated"]
+    assert match_regex("(little|girl|three|years|old)+", res["content"])
+
+
 @pytest.mark.skipif(not is_slow_test_allowed(), reason="skipping slow test")
 def test_with_big_model():
     server = ServerProcess()
